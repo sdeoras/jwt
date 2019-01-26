@@ -50,18 +50,18 @@ type manager struct {
 
 // NewRequestor provides an instance of Requestor that allows making http request with embedded
 // jwt tokens. Use this on the client side.
-func NewRequestor(secret string) (Requestor, error) {
+func NewRequestor(secret string) Requestor {
 	m := new(manager)
 	m.secret = []byte(secret)
-	return m, nil
+	return m
 }
 
 // NewValidator provides an new instance to manager jwt authentication on the server side.
-func NewValidator(secret string) (Validator, error) {
+func NewValidator(secret string) Validator {
 	m := new(manager)
 	m.secret = []byte(secret)
 	m.registry = make(map[string]func(w http.ResponseWriter, r *http.Request))
-	return m, nil
+	return m
 }
 
 // Request provides a new token to be used primarily by the HTTP clients.

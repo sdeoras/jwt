@@ -30,11 +30,7 @@ func HelloWorld(w http.ResponseWriter, r *http.Request) {
 }
 
 func Validate(w http.ResponseWriter, r *http.Request) {
-	jwt, err := NewValidator(secret)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+	jwt := NewValidator(secret)
 
 	jwt.Register(nameHello, HelloWorld)
 	jwt.Register(nameCustom, CustomBuffer)
@@ -56,11 +52,7 @@ func Validate(w http.ResponseWriter, r *http.Request) {
 }
 
 func Rotate(w http.ResponseWriter, r *http.Request) {
-	jwt, err := NewValidator(secret)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+	jwt := NewValidator(secret)
 
 	jwt.Register(nameHello, HelloWorld)
 	jwt.Register(nameCustom, CustomBuffer)
@@ -87,10 +79,7 @@ func Rotate(w http.ResponseWriter, r *http.Request) {
 }
 
 func TestManager_Validate(t *testing.T) {
-	jwt, err := NewRequestor(secret)
-	if err != nil {
-		t.Fatal(err)
-	}
+	jwt := NewRequestor(secret)
 
 	r, err := jwt.Request("/", nameHello, nil)
 	if err != nil {
@@ -119,10 +108,7 @@ func TestManager_Validate(t *testing.T) {
 }
 
 func TestManager_Rotate(t *testing.T) {
-	jwt, err := NewRequestor(secret)
-	if err != nil {
-		t.Fatal(err)
-	}
+	jwt := NewRequestor(secret)
 
 	r, err := jwt.Request("/", nameHello, nil)
 	if err != nil {
@@ -153,10 +139,7 @@ func TestManager_Rotate(t *testing.T) {
 }
 
 func TestManager_CustomBuffer(t *testing.T) {
-	jwt, err := NewRequestor(secret)
-	if err != nil {
-		t.Fatal(err)
-	}
+	jwt := NewRequestor(secret)
 
 	r, err := jwt.Request("/", nameCustom, []byte("custom func"))
 	if err != nil {
