@@ -7,16 +7,21 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"strings"
 	"sync"
 
 	jwt "github.com/dgrijalva/jwt-go"
 )
 
+const (
+	bearer = "Bearer"
+	delim  = " "
+)
+
 // data is the internal organization to marshal http.Request body into
 type data struct {
-	Token string
-	Name  string
-	Buff  []byte
+	Name string
+	Buff []byte
 }
 
 // Requestor provides an interface to request jwt authentication for http handle func's on
@@ -75,7 +80,6 @@ func (m *manager) Request(url, funcName string, funcData []byte) (*http.Request,
 	}
 
 	d := new(data)
-	d.Token = tokenString
 	d.Name = funcName
 	d.Buff = funcData
 
@@ -91,29 +95,20 @@ func (m *manager) Request(url, funcName string, funcData []byte) (*http.Request,
 
 	req.Header.Set("X-Custom-Header", "jwt")
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", strings.Join([]string{bearer, tokenString}, delim))
 
 	return req, nil
 }
 
-// Validate validates the token embedded in http.Request body and returns the registered
+// Validate validates the token embedded in http.Request header and returns the registered
 // function to forward http request to.
 func (m *manager) Validate(r *http.Request) (bool, func(w http.ResponseWriter, r *http.Request), error) {
-	b, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		return false, nil, fmt.Errorf("%s:%v", "error reading http request reader", err)
-	}
-	defer r.Body.Close()
-
-	t := new(data)
-	if err := json.Unmarshal(b, t); err != nil {
-		return false, nil, fmt.Errorf("%s:%v", "error unmarshing http request to get jwt token", err)
+	authParts := strings.Split(r.Header.Get("Authorization"), delim)
+	if len(authParts) != 2 || authParts[0] != bearer {
+		return false, nil, fmt.Errorf("invalid authorization in http request header")
 	}
 
-	if len(t.Token) == 0 {
-		return false, nil, fmt.Errorf("%s", "jwt token length is zero")
-	}
-
-	token, err := jwt.Parse(t.Token, func(token *jwt.Token) (interface{}, error) {
+	token, err := jwt.Parse(authParts[1], func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method was used in JWT token making it invalid: %v", token.Header["alg"])
 		}
@@ -130,6 +125,17 @@ func (m *manager) Validate(r *http.Request) (bool, func(w http.ResponseWriter, r
 
 	if !token.Valid {
 		return false, nil, fmt.Errorf("%s", "invalid JWT token")
+	}
+
+	b, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		return false, nil, fmt.Errorf("%s:%v", "error reading http request reader", err)
+	}
+	defer r.Body.Close()
+
+	t := new(data)
+	if err := json.Unmarshal(b, t); err != nil {
+		return false, nil, fmt.Errorf("%s:%v", "error unmarshing http request to get jwt token", err)
 	}
 
 	r.Body = ioutil.NopCloser(bytes.NewReader(t.Buff))
