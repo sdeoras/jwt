@@ -15,24 +15,17 @@ const (
 	delim  = " "
 )
 
-// data is the internal organization to marshal http.Request body into
-type data struct {
-	Name string
-	Buff []byte
-}
-
-// Requestor provides an interface to request jwt authentication for http handle func's on
-// the client side.
-type Requestor interface {
-	// Request provides a new http Request with token embedded in it.
-	Request(method, url string, claims map[string]interface{}, b []byte) (*http.Request, error)
-}
-
-// Validator provides an interface to manage jwt authentication for http calls on the server side.
-type Validator interface {
+// Manager defines the interface for jwt related methods
+type Manager interface {
 	// Validate validates the token embedded in http.Request body and returns the registered
 	// function to forward http request to.
 	Validate(r *http.Request) error
+	// Request provides a new http Request with token embedded in it.
+	Request(method, url string, claims map[string]interface{}, b []byte) (*http.Request, error)
+	// GetToken gets a token string
+	GetToken(claims map[string]interface{}) (string, error)
+	// SetToken sets token for input http request
+	SetToken(token string, req *http.Request)
 }
 
 // manager implements interfaces for both server and client sides.
@@ -41,16 +34,8 @@ type manager struct {
 	secret []byte
 }
 
-// NewRequestor provides an instance of Requestor that allows making http request with embedded
-// jwt tokens. Use this on the client side.
-func NewRequestor(secret string) Requestor {
-	m := new(manager)
-	m.secret = []byte(secret)
-	return m
-}
-
-// NewValidator provides an new instance to manager jwt authentication on the server side.
-func NewValidator(secret string) Validator {
+// NewManager provides a new instance of jwt manager
+func NewManager(secret string) Manager {
 	m := new(manager)
 	m.secret = []byte(secret)
 	return m
@@ -76,6 +61,24 @@ func (m *manager) Request(method, url string, claims map[string]interface{}, b [
 	req.Header.Set("Authorization", strings.Join([]string{bearer, tokenString}, delim))
 
 	return req, nil
+}
+
+func (m *manager) GetToken(claims map[string]interface{}) (string, error) {
+	token := jwt.New(jwt.SigningMethodHS256)
+	token.Claims = jwt.MapClaims(claims)
+
+	tokenString, err := token.SignedString(m.secret)
+	if err != nil {
+		return "", fmt.Errorf("%s:%v", "error creating new token", err)
+	}
+
+	return tokenString, nil
+}
+
+func (m *manager) SetToken(token string, req *http.Request) {
+	req.Header.Set("X-Custom-Header", "jwt")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", strings.Join([]string{bearer, token}, delim))
 }
 
 // Validate validates the token embedded in http.Request header and returns the registered

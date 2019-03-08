@@ -13,7 +13,7 @@ const (
 )
 
 func Validate(w http.ResponseWriter, r *http.Request) {
-	jwt := NewValidator(secret)
+	jwt := NewManager(secret)
 
 	err := jwt.Validate(r)
 	if err != nil {
@@ -32,7 +32,7 @@ func Validate(w http.ResponseWriter, r *http.Request) {
 }
 
 func TestManager_Validate(t *testing.T) {
-	jwt := NewRequestor(secret)
+	jwt := NewManager(secret)
 
 	r, err := jwt.Request(http.MethodPost, "/", nil, []byte(output))
 	if err != nil {
