@@ -83,13 +83,15 @@ func (m *manager) SetToken(token string, req *http.Request) {
 
 // Validate validates the token embedded in http.Request header and returns the registered
 // function to forward http request to.
+// If JWT token is not found in http header, it looks into URL query and tries to get it
+// from there.
 func (m *manager) Validate(r *http.Request) error {
-	authParts := strings.Split(r.Header.Get("Authorization"), delim)
-	if len(authParts) != 2 || authParts[0] != bearer {
-		return fmt.Errorf("invalid authorization in http request header")
+	tokenString, err := getToken(r)
+	if err != nil {
+		return err
 	}
 
-	token, err := jwt.Parse(authParts[1], func(token *jwt.Token) (interface{}, error) {
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method was used in JWT token making it invalid: %v", token.Header["alg"])
 		}
@@ -109,4 +111,17 @@ func (m *manager) Validate(r *http.Request) error {
 	}
 
 	return nil
+}
+
+func getToken(r *http.Request) (string, error) {
+	authParts := strings.Split(r.Header.Get("Authorization"), delim)
+	if len(authParts) != 2 || authParts[0] != bearer {
+		keys, ok := r.URL.Query()["Authorization"]
+		if !ok || len(keys) <= 0 {
+			return "", fmt.Errorf("invalid auth since no JWT auth token found")
+		}
+		return keys[0], nil
+	} else {
+		return authParts[1], nil
+	}
 }
