@@ -35,7 +35,7 @@ func Validate(w http.ResponseWriter, r *http.Request) {
 func TestManager_Validate(t *testing.T) {
 	jwt := NewManager(secret)
 
-	r, err := jwt.Request(http.MethodPost, "/", nil, []byte(output))
+	r, err := jwt.NewHTTPRequest(http.MethodPost, "/", nil, []byte(output))
 	if err != nil {
 		t.Fatal(err)
 	}

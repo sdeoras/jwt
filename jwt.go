@@ -15,19 +15,6 @@ const (
 	delim  = " "
 )
 
-// Manager defines the interface for jwt related methods
-type Manager interface {
-	// Validate validates the token embedded in http.Request body and returns the registered
-	// function to forward http request to.
-	Validate(r *http.Request) error
-	// Request provides a new http Request with token embedded in it.
-	Request(method, url string, claims map[string]interface{}, b []byte) (*http.Request, error)
-	// GetToken gets a token string
-	GetToken(claims map[string]interface{}) (string, error)
-	// SetToken sets token for input http request
-	SetToken(token string, req *http.Request)
-}
-
 // manager implements interfaces for both server and client sides.
 type manager struct {
 	// secret is the secret key used for jwt authentication
@@ -41,8 +28,24 @@ func NewManager(secret string) Manager {
 	return m
 }
 
-// Request provides a new token to be used primarily by the HTTP clients.
-func (m *manager) Request(method, url string, claims map[string]interface{}, b []byte) (*http.Request, error) {
+// NewHTTPHandler returns a new http handler that wraps input http handler in a closure
+// such that jwt authentication is enabled prior to control being passed to the input handler
+func (m *manager) NewHTTPHandler(f func(
+	w http.ResponseWriter, r *http.Request),
+) func(
+	w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if err := m.Validate(r); err != nil {
+			http.Error(w, fmt.Sprintf("error validating request:%v", err), http.StatusBadRequest)
+			return
+		}
+		// forward to input func
+		f(w, r)
+	}
+}
+
+// NewHTTPRequest provides a new token to be used primarily by the HTTP clients.
+func (m *manager) NewHTTPRequest(method, url string, claims map[string]interface{}, b []byte) (*http.Request, error) {
 	token := jwt.New(jwt.SigningMethodHS256)
 	token.Claims = jwt.MapClaims(claims)
 
