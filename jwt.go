@@ -6,25 +6,31 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	jwt "github.com/dgrijalva/jwt-go"
 )
 
 const (
-	bearer = "Bearer"
-	delim  = " "
+	authorization = "Authorization"
+	bearer        = "Bearer"
+	delim         = " "
+	exp           = "exp"
 )
 
 // manager implements interfaces for both server and client sides.
 type manager struct {
 	// secret is the secret key used for jwt authentication
 	secret []byte
+	// options are jwt settings such as lifespan, issuer, audience and so on
+	options []Option
 }
 
 // NewManager provides a new instance of jwt manager
-func NewManager(secret string) Manager {
+func NewManager(secret string, options ...Option) Manager {
 	m := new(manager)
 	m.secret = []byte(secret)
+	m.options = options
 	return m
 }
 
@@ -36,7 +42,7 @@ func (m *manager) NewHTTPHandler(f func(
 	w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := m.Validate(r); err != nil {
-			http.Error(w, fmt.Sprintf("error validating request:%v", err), http.StatusBadRequest)
+			http.Error(w, fmt.Sprintf("error validating request:%v", err), http.StatusUnauthorized)
 			return
 		}
 		// forward to input func
@@ -46,12 +52,9 @@ func (m *manager) NewHTTPHandler(f func(
 
 // NewHTTPRequest provides a new token to be used primarily by the HTTP clients.
 func (m *manager) NewHTTPRequest(method, url string, claims map[string]interface{}, b []byte) (*http.Request, error) {
-	token := jwt.New(jwt.SigningMethodHS256)
-	token.Claims = jwt.MapClaims(claims)
-
-	tokenString, err := token.SignedString(m.secret)
+	token, err := m.GetToken(claims)
 	if err != nil {
-		return nil, fmt.Errorf("%s:%v", "error creating new token", err)
+		return nil, err
 	}
 
 	req, err := http.NewRequest(method, url, bytes.NewReader(b))
@@ -61,12 +64,36 @@ func (m *manager) NewHTTPRequest(method, url string, claims map[string]interface
 
 	req.Header.Set("X-Custom-Header", "jwt")
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", strings.Join([]string{bearer, tokenString}, delim))
+	req.Header.Set("Authorization", strings.Join([]string{bearer, token}, delim))
 
 	return req, nil
 }
 
 func (m *manager) GetToken(claims map[string]interface{}) (string, error) {
+	if claims == nil {
+		claims = make(map[string]interface{})
+	}
+
+	// add claims to jwt token overriding input with options set in constructor
+	for i := range m.options {
+		opt, ok := m.options[i].(*option)
+		if !ok {
+			return "", fmt.Errorf("error in type assertion in jwt token")
+		}
+
+		switch opt.optionType {
+		case optEnforceExpiry: // do nothing, this opt is for the server side
+		case optLifeSpan:
+			lifespan, ok := m.options[i].GetValue().(time.Duration)
+			if !ok {
+				return "", fmt.Errorf("error in type assertion in lifespan option")
+			}
+			claims[exp] = time.Now().Add(lifespan).Unix()
+		default:
+			return "", fmt.Errorf("invalid option type")
+		}
+	}
+
 	token := jwt.New(jwt.SigningMethodHS256)
 	token.Claims = jwt.MapClaims(claims)
 
@@ -113,17 +140,35 @@ func (m *manager) Validate(r *http.Request) error {
 		return fmt.Errorf("%s", "invalid JWT token")
 	}
 
+	for i := range m.options {
+		opt, ok := m.options[i].(*option)
+		if !ok {
+			return fmt.Errorf("error in type assertion in jwt token")
+		}
+
+		switch opt.optionType {
+		case optLifeSpan: // do nothing, this option is for the client side
+		case optEnforceExpiry: // if enforce is set, claims must have expiry
+			claims, ok := token.Claims.(jwt.MapClaims)
+			if !ok {
+				return fmt.Errorf("error in type assertion in jwt claims")
+			}
+
+			if _, ok := claims[exp]; !ok {
+				return fmt.Errorf("all claims must have expiry in their claims")
+			}
+		default:
+			return fmt.Errorf("invalid option type")
+		}
+	}
+
 	return nil
 }
 
 func getToken(r *http.Request) (string, error) {
-	authParts := strings.Split(r.Header.Get("Authorization"), delim)
+	authParts := strings.Split(r.Header.Get(authorization), delim)
 	if len(authParts) != 2 || authParts[0] != bearer {
-		keys, ok := r.URL.Query()["Authorization"]
-		if !ok || len(keys) <= 0 {
-			return "", fmt.Errorf("invalid auth since no JWT auth token found")
-		}
-		return keys[0], nil
+		return "", fmt.Errorf("invalid auth since no JWT auth token found")
 	} else {
 		return authParts[1], nil
 	}
